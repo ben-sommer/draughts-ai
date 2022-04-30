@@ -12,11 +12,12 @@ true - king
 */
 
 exports.DraughtsGame = class DraughtsGame {
-  constructor() {
-    this.setup();
-  }
+  constructor(board, score, turn) {
+    this.score = score !== undefined ? score : [0, 0]; // [player 1, player 2] number of captured counters
+    this.turn = turn !== undefined ? turn : 1; // 1 or 2
+    this.multipleCapture = false;
+    this.multipleCapturePoint = [0, 0];
 
-  setup() {
     const alternatingOne = Array(8)
       .fill(null)
       .map((x, i) => [i % 2, false]);
@@ -27,16 +28,30 @@ exports.DraughtsGame = class DraughtsGame {
 
     const empty = Array(8).fill([0, false]);
 
-    this.board = [
-      [...alternatingOne],
-      [...alternatingOne.slice().reverse()],
-      [...alternatingOne],
-      [...empty],
-      [...empty],
-      [...alternatingTwo.slice().reverse()],
-      [...alternatingTwo],
-      [...alternatingTwo.slice().reverse()],
-    ];
+    this.board =
+      board !== undefined
+        ? board
+        : [
+            [...alternatingOne],
+            [...alternatingOne.slice().reverse()],
+            [...alternatingOne],
+            [...empty],
+            [...empty],
+            [...alternatingTwo.slice().reverse()],
+            [...alternatingTwo],
+            [...alternatingTwo.slice().reverse()],
+          ];
+  }
+
+  get evaluation() {
+    return this.score[0] - this.score[1];
+  }
+
+  get isGameOver() {
+    return (
+      (this.getPossibleMoves(1).length === 0 && this.turn == 1) ||
+      (his.getPossibleMoves(2).length === 0 && this.turn == 2)
+    );
   }
 
   showBoard() {
@@ -71,7 +86,8 @@ exports.DraughtsGame = class DraughtsGame {
         if (location[0] === player) {
           const possibleMovesForLocation = this.getPossibleMovesForLocation(
             rowIndex,
-            locationIndex
+            locationIndex,
+            player
           );
           possibleMoves.push(...possibleMovesForLocation);
         }
@@ -81,31 +97,39 @@ exports.DraughtsGame = class DraughtsGame {
     return possibleMoves;
   }
 
-  getPossibleMovesForLocation(rowIndex, locationIndex) {
+  getPossibleMovesForLocation(rowIndex, locationIndex, player) {
     let possibleMoves = [];
 
     const location = this.board[rowIndex][locationIndex];
-
-    this.getPossibleMovesForRegular(rowIndex, locationIndex, possibleMoves);
 
     const possibleMovesForLocation = [
       ...(location[1] || player === 2
         ? [
             [rowIndex - 1, locationIndex - 1],
             [rowIndex - 1, locationIndex + 1],
+            [rowIndex - 2, locationIndex - 2],
+            [rowIndex - 2, locationIndex + 2],
           ]
         : []),
       ...(location[1] || player === 1
         ? [
             [rowIndex + 1, locationIndex - 1],
             [rowIndex + 1, locationIndex + 1],
+            [rowIndex + 2, locationIndex - 2],
+            [rowIndex + 2, locationIndex + 2],
           ]
         : []),
     ];
 
     possibleMovesForLocation.forEach(([newRowIndex, newLocationIndex]) => {
       if (
-        this.isValidMove(rowIndex, locationIndex, newRowIndex, newLocationIndex)
+        this.isValidMove(
+          rowIndex,
+          locationIndex,
+          newRowIndex,
+          newLocationIndex,
+          player
+        )
       ) {
         possibleMoves.push([
           [rowIndex, locationIndex],
@@ -131,6 +155,10 @@ exports.DraughtsGame = class DraughtsGame {
       return false;
     }
 
+    if (player !== this.turn) {
+      return false;
+    }
+
     const location = this.board[rowIndex][locationIndex];
 
     if (location[0] !== player) {
@@ -144,18 +172,30 @@ exports.DraughtsGame = class DraughtsGame {
     }
 
     if (
+      this.multipleCapture &&
+      (this.multipleCapturePoint[0] != rowIndex ||
+        this.multipleCapturePoint[1] != locationIndex)
+    ) {
+      return false;
+    }
+
+    if (
       Math.abs(rowIndex - newRowIndex) === 2 &&
       Math.abs(locationIndex - newLocationIndex) === 2
     ) {
       const possibleMovesForLocation = [
         ...(location[1] || player === 2
           ? [
+              [rowIndex - 1, locationIndex - 1],
+              [rowIndex - 1, locationIndex + 1],
               [rowIndex - 2, locationIndex - 2],
               [rowIndex - 2, locationIndex + 2],
             ]
           : []),
         ...(location[1] || player === 1
           ? [
+              [rowIndex + 1, locationIndex - 1],
+              [rowIndex + 1, locationIndex + 1],
               [rowIndex + 2, locationIndex - 2],
               [rowIndex + 2, locationIndex + 2],
             ]
@@ -186,12 +226,16 @@ exports.DraughtsGame = class DraughtsGame {
           ? [
               [rowIndex - 1, locationIndex - 1],
               [rowIndex - 1, locationIndex + 1],
+              [rowIndex - 2, locationIndex - 2],
+              [rowIndex - 2, locationIndex + 2],
             ]
           : []),
         ...(location[1] || player === 1
           ? [
               [rowIndex + 1, locationIndex - 1],
               [rowIndex + 1, locationIndex + 1],
+              [rowIndex + 2, locationIndex - 2],
+              [rowIndex + 2, locationIndex + 2],
             ]
           : []),
       ];
@@ -238,11 +282,47 @@ exports.DraughtsGame = class DraughtsGame {
       this.board[(rowIndex + newRowIndex) / 2][
         (locationIndex + newLocationIndex) / 2
       ] = [0, false];
+
+      this.score[player - 1] += 1;
+
+      const nextMoves = this.getPossibleMoves(player).filter(
+        (x) =>
+          Math.abs(x[0][0] - x[1][0]) === 2 && Math.abs(x[0][1] - x[1][1]) === 2
+      );
+
+      if (nextMoves.length === 0) {
+        this.turn = 3 - player;
+        this.multipleCapture = false;
+      } else {
+        this.multipleCapture = true;
+        this.multipleCapturePoint = [newRowIndex, newLocationIndex];
+      }
     } else {
       this.board[newRowIndex][newLocationIndex] =
         this.board[rowIndex][locationIndex];
       this.board[rowIndex][locationIndex] = [0, false];
+      this.turn = 3 - player;
+      this.multipleCapture = false;
     }
     return true;
+  }
+
+  copy() {
+    return new DraughtsGame(this.board, this.score, this.turn);
+  }
+
+  minimax(depth, player) {
+    // Player 1 is the maximising player
+    if (depth == 0 || this.isGameOver) return this.evaluation;
+
+    if (player == 1) {
+      let maxEval = -Infinity;
+      const moves = this.getPossibleMoves(player);
+      for (const move of moves) {
+        const newGame = this.copy();
+        newGame.move(move[0][0], move[0][1], move[1][0], move[1][1], player);
+        return Math.max(maxEval, newGame.minimax());
+      }
+    }
   }
 };
